@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, Output, streamText } from "ai";
+import { embedMany, generateText, Output, streamText } from "ai";
 import type { z } from "zod";
 import { defaultModel, MODELS, type ModelId } from "@/lib/ai/models";
 import { costUsd } from "@/lib/ai/pricing";
@@ -16,6 +16,12 @@ export class AiNotConfiguredError extends Error {
     this.name = "AiNotConfiguredError";
   }
 }
+
+/** Google's text embedding model: turns text into numbers that capture meaning. */
+export const EMBEDDING_MODEL = "gemini-embedding-001";
+
+/** How many numbers each embedding has. Smaller keeps the saved file small. */
+export const EMBEDDING_DIMENSIONS = 768;
 
 export function isAiConfigured(): boolean {
   return Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
@@ -36,7 +42,7 @@ type TextOptions = DistributiveOmit<
 export type AiCallRow = {
   module: number;
   feature: string;
-  model: ModelId;
+  model: ModelId | typeof EMBEDDING_MODEL;
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: number | null;
@@ -158,3 +164,49 @@ const THINKING = { includeThoughts: true, thinkingBudget: 1024 };
 export const THOUGHT_SUMMARIES = {
   google: { thinkingConfig: THINKING },
 };
+
+/**
+ * Embeds a list of texts, one vector per text (same order). Logged to ai_calls
+ * like every other call, with the embedding model's name.
+ * Use taskType "RETRIEVAL_DOCUMENT" for passages being stored and
+ * "RETRIEVAL_QUERY" for a question being looked up.
+ * Example: callEmbed({ module: 3, feature: "embed-passages" }, texts)
+ */
+export async function callEmbed(
+  info: { module: number; feature: string },
+  texts: string[],
+  taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY" = "RETRIEVAL_DOCUMENT",
+): Promise<number[][]> {
+  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  if (!googleKey) throw new AiNotConfiguredError();
+
+  const started = performance.now();
+  const row = (ok: boolean, tokens: number | null): AiCallRow => ({
+    module: info.module,
+    feature: info.feature,
+    model: EMBEDDING_MODEL,
+    input_tokens: tokens,
+    output_tokens: null,
+    cost_usd: null,
+    latency_ms: Math.round(performance.now() - started),
+    ok,
+    created_at: new Date().toISOString(),
+  });
+
+  try {
+    const { embeddings, usage } = await embedMany({
+      model: createGoogleGenerativeAI({ apiKey: googleKey }).embedding(
+        EMBEDDING_MODEL,
+      ),
+      values: texts,
+      providerOptions: {
+        google: { taskType, outputDimensionality: EMBEDDING_DIMENSIONS },
+      },
+    });
+    await logCall(row(true, usage?.tokens ?? null));
+    return embeddings;
+  } catch (error) {
+    await logCall(row(false, null));
+    throw error;
+  }
+}
