@@ -61,6 +61,27 @@ describe("search_docs (offline)", () => {
     expect(search.unavailable).toMatch(/can't be searched/);
   });
 
+  it("won't rank passages that were embedded with a different model", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/copper/rag/passages", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("@/lib/copper/rag/passages")>()),
+      EMBEDDING_INFO: {
+        model: "some-older-model",
+        dimensions: 768,
+        createdAt: "",
+      },
+    }));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    nextVector = passageNamed("copper-home-user-guide-p9-2").embedding;
+    const { searchDocs } = await import("@/lib/copper/rag/search");
+    const search = await searchDocs({ query: "C-47" });
+    vi.doUnmock("@/lib/copper/rag/passages");
+    vi.resetModules();
+    expect(search.results).toEqual([]);
+    expect(search.unavailable).toMatch(/can't be searched/);
+    expect(JSON.stringify(spy.mock.calls)).toContain("npm run build:passages");
+  });
+
   it("rejects a missing or empty question", async () => {
     const { searchDocsInput } = await import("@/lib/copper/rag/search");
     for (const bad of [{}, { query: "" }, { query: "  " }, { query: 5 }])

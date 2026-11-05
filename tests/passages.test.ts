@@ -80,6 +80,7 @@ const SAVED = "lib/copper/data/passages.json";
 describe.skipIf(!existsSync(SAVED))("lib/copper/data/passages.json", () => {
   const load = () =>
     JSON.parse(readFileSync(SAVED, "utf8")) as {
+      model: string;
       dimensions: number;
       passages: {
         id: string;
@@ -103,6 +104,11 @@ describe.skipIf(!existsSync(SAVED))("lib/copper/data/passages.json", () => {
         expect(p.embedding).toHaveLength(saved.dimensions);
       }
     }
+  });
+
+  it("was embedded with the model the app searches with", async () => {
+    const { EMBEDDING_MODEL } = await import("@/lib/ai/call");
+    expect(load().model).toBe(EMBEDDING_MODEL);
   });
 
   it("has unique ids and unit-length embeddings", () => {

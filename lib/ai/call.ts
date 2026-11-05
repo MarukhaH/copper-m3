@@ -18,7 +18,7 @@ export class AiNotConfiguredError extends Error {
 }
 
 /** Google's text embedding model: turns text into numbers that capture meaning. */
-export const EMBEDDING_MODEL = "gemini-embedding-001";
+export const EMBEDDING_MODEL = "gemini-embedding-2";
 
 /** How many numbers each embedding has. Smaller keeps the saved file small. */
 export const EMBEDDING_DIMENSIONS = 768;
@@ -67,6 +67,67 @@ async function logCall(row: AiCallRow): Promise<void> {
   console.info("[ai_calls]", JSON.stringify(row));
 }
 
+export type AiErrorRow = {
+  module: number;
+  feature: string;
+  model: string;
+  /** HTTP status from Google (429 = quota, 400 = bad key), when there is one. */
+  status: number | null;
+  message: string;
+  created_at: string;
+};
+
+/** Follows "Failed after 3 attempts" wrappers down to Google's own error. */
+function rootError(error: unknown): unknown {
+  let current: unknown = error;
+  for (let i = 0; i < 5; i++) {
+    const inner = (current as { lastError?: unknown } | null)?.lastError;
+    if (!inner) break;
+    current = inner;
+  }
+  return current;
+}
+
+/**
+ * Google's real error as one short line: what it said, with any API key
+ * blanked out so a key can never end up in a log.
+ */
+export function describeError(error: unknown): {
+  status: number | null;
+  message: string;
+} {
+  const root = rootError(error);
+  const status = (root as { statusCode?: unknown } | null)?.statusCode;
+  let message = root instanceof Error ? root.message : String(root);
+  const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  if (key) message = message.split(key).join("[key]");
+  message = message
+    .replace(/AIza[\w-]{20,}/g, "[key]")
+    .replace(/AQ\.[\w.-]{20,}/g, "[key]")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    status: typeof status === "number" ? status : null,
+    message: message.length > 600 ? `${message.slice(0, 600)}…` : message,
+  };
+}
+
+/** Prints one "[ai_error]" line saying why a call failed. */
+function logError(
+  info: { module: number; feature: string },
+  model: string,
+  error: unknown,
+) {
+  const row: AiErrorRow = {
+    module: info.module,
+    feature: info.feature,
+    model,
+    ...describeError(error),
+    created_at: new Date().toISOString(),
+  };
+  console.error("[ai_error]", JSON.stringify(row));
+}
+
 type Usage = { inputTokens?: number; outputTokens?: number };
 
 /** Builds the ai_calls row for a call that started at `started`. */
@@ -102,7 +163,10 @@ async function tracked<T extends { usage: Usage }>(
     await logCall(row(true, result.usage));
     return result;
   } catch (error) {
-    if (!(error instanceof AiNotConfiguredError)) await logCall(row(false));
+    if (!(error instanceof AiNotConfiguredError)) {
+      await logCall(row(false));
+      logError(info, model, error);
+    }
     throw error;
   }
 }
@@ -149,7 +213,10 @@ export function callStream(info: CallInfo, options: StreamOptions) {
     ...options,
     model: languageModel(model),
     onFinish: ({ totalUsage }) => logCall(row(true, totalUsage)),
-    onError: () => logCall(row(false)),
+    onError: ({ error }) => {
+      logError(info, model, error);
+      return logCall(row(false));
+    },
   });
 }
 
@@ -207,6 +274,7 @@ export async function callEmbed(
     return embeddings;
   } catch (error) {
     await logCall(row(false, null));
+    logError(info, EMBEDDING_MODEL, error);
     throw error;
   }
 }

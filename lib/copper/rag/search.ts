@@ -2,9 +2,13 @@
 // meaning to a question. The question is embedded the same way the passages
 // were, and the passages whose vectors point the same way come back first.
 import { z } from "zod";
-import { callEmbed } from "@/lib/ai/call";
+import { callEmbed, EMBEDDING_MODEL } from "@/lib/ai/call";
 import { DOCUMENTS } from "@/lib/copper/documents";
-import { getPassages, type Passage } from "@/lib/copper/rag/passages";
+import {
+  EMBEDDING_INFO,
+  getPassages,
+  type Passage,
+} from "@/lib/copper/rag/passages";
 
 /** How many passages come back. */
 export const RESULT_COUNT = 5;
@@ -64,6 +68,24 @@ export function closestPassages(
 /** search_docs: the 5 closest passages, each with title, page and a PDF link. */
 export async function searchDocs(input: SearchDocsInput): Promise<DocSearch> {
   const query = input.query.trim();
+
+  // Vectors from different embedding models can't be compared. If the saved
+  // passages were made with another model, say so instead of ranking nonsense.
+  if (EMBEDDING_INFO.model !== EMBEDDING_MODEL) {
+    console.error(
+      "[ai_error]",
+      JSON.stringify({
+        feature: "search-docs",
+        message: `passages.json was embedded with ${EMBEDDING_INFO.model}, but the app now uses ${EMBEDDING_MODEL}. Run: npm run build:passages`,
+      }),
+    );
+    return {
+      query,
+      results: [],
+      unavailable:
+        "The documents can't be searched right now. Please try again soon.",
+    };
+  }
 
   let vector: number[];
   try {
