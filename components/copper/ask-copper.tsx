@@ -9,6 +9,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   BrainIcon,
+  ExternalLinkIcon,
   MessageCircleIcon,
   TriangleAlertIcon,
   WrenchIcon,
@@ -442,7 +443,7 @@ function InlineMarkdown({ text }: { text: string }) {
   });
 }
 
-function ToolCard({ step, number }: { step: ToolStep; number: number }) {
+export function ToolCard({ step, number }: { step: ToolStep; number: number }) {
   return (
     <div
       data-testid="tool-call"
@@ -603,6 +604,37 @@ function ToolOutput({ name, output }: { name: string; output: any }) {
           </div>
         ))}
       </div>
+    );
+  }
+  if (name === "search_docs" && output?.results) {
+    if (output.unavailable)
+      return <p className="text-xs">{output.unavailable}</p>;
+    if (output.results.length === 0)
+      return <p className="text-xs">No passages found.</p>;
+    return (
+      <ol className="space-y-3 text-xs" data-testid="doc-results">
+        {output.results.map((r: any) => (
+          <li key={`${r.documentId}-${r.page}-${r.rank}`} className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">{r.title}</span>
+              <Pill className="bg-accent text-white">Page {r.page}</Pill>
+              <span className="text-muted-foreground font-mono">
+                {Math.round(r.score * 100)}% match
+              </span>
+            </div>
+            <p className="text-muted-foreground line-clamp-3">{r.text}</p>
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary inline-flex items-center gap-1 font-medium underline underline-offset-2"
+            >
+              Open the PDF at page {r.page}
+              <ExternalLinkIcon className="size-3" />
+            </a>
+          </li>
+        ))}
+      </ol>
     );
   }
   // A tool without its own layout yet: show what came back as plain text.

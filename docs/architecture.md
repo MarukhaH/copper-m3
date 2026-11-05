@@ -92,7 +92,9 @@ each step. Module 3 teaches it to answer from the customer documents.
 |---|---|---|
 | Component | `components/copper/ask-copper.tsx` | The launcher and chat panel, mounted from `app/page.tsx` and opened by the header's `#ask` link. Draws each answer as stations: the tools on offer, thinking, each tool call, then the reply |
 | Server Action | `lib/copper/assistant/ask.ts` | `askCopper()`: streams the conversation with `callStream`, up to 5 steps, and sends each step back as a live `Progress` |
-| Tools | `lib/copper/assistant/tools.ts` | `copperTools`: `get_products`, `get_prices`, `calculate_cost`, `check_availability` |
-| Instructions | `lib/copper/assistant/instructions.ts` | `COPPER_INSTRUCTIONS`. Copper says it can't help yet with warranty, setup, troubleshooting or privacy |
+| Tools | `lib/copper/assistant/tools.ts` | `copperTools`: `get_products`, `get_prices`, `calculate_cost`, `check_availability`, `search_docs` |
+| Instructions | `lib/copper/assistant/instructions.ts` | `COPPER_INSTRUCTIONS`. Copper uses `search_docs` for setup, troubleshooting, warranty and policy questions, answers only from what it returns, and cites the document and page |
 | Data | `lib/copper/inventory.ts`, `lib/copper/documents.ts` | Stock from `lib/copper/data/inventory.json`; `DOCUMENTS`: the four customer documents and their PDF paths under `public/docs/`. The PDFs are added in class |
 | AI calls | `{ module: 2, feature: "ask-copper" }` | One streamed call per question |
+| Document search | `lib/copper/rag/` | `chunk.ts` splits PDF pages into passages; `passages.ts` loads `lib/copper/data/passages.json` (built by `npm run build:passages`) into memory; `search.ts` is `search_docs`: embeds the question, returns the 5 closest passages with title, page and a PDF link (`/docs/<file>.pdf#page=N`) |
+| AI calls (search) | `{ module: 3, feature: "embed-passages" }`, `{ module: 3, feature: "search-docs" }` | `callEmbed` in `lib/ai/call.ts`, logged like every other call |
