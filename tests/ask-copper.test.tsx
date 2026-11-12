@@ -776,6 +776,40 @@ describe("Part C: askCopper", () => {
     );
   });
 
+  it("asks again once when the model ends with thinking but no answer", async () => {
+    const thinksOnly: StreamPart[] = [
+      { type: "reasoning-start", id: "r1" },
+      { type: "reasoning-delta", id: "r1", delta: "Weighing the refund rules" },
+      { type: "reasoning-end", id: "r1" },
+      finish("stop"),
+    ];
+    model = modelStreaming(
+      calls("get_prices", {}),
+      thinksOnly,
+      calls("get_prices", {}),
+      says("Annual plans are refundable within 14 days."),
+    );
+    const { askCopper } = await loadAsk();
+    const result = await answer(
+      await askCopper({ messages: question, useTools: true }),
+    );
+    expect(result.reply).toBe("Annual plans are refundable within 14 days.");
+    expect(result.status).toBe("done");
+    // Only the second try's steps are shown.
+    expect(toolCallsOf(result)).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(4);
+  });
+
+  it("apologizes if the second try has no answer either", async () => {
+    model = modelStreaming(says(""), says(""));
+    const { askCopper } = await loadAsk();
+    const result = await answer(
+      await askCopper({ messages: question, useTools: true }),
+    );
+    expect(result.reply).toMatch(/something went wrong/);
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
   it("always leaves the last step for the reply, even if the model keeps calling tools", async () => {
     // Five tool calls in a row, then (with tools switched off) the answer.
     model = modelStreaming(

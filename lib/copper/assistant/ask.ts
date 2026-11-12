@@ -27,6 +27,12 @@ export type AskCopperResult = { progress: Live<Progress> };
  */
 const MAX_STEPS = 6;
 
+/**
+ * Now and then the model ends a turn with a thinking summary but no answer
+ * text. When that happens, ask once more before apologizing.
+ */
+const MAX_ATTEMPTS = 2;
+
 const SORRY = "Sorry, something went wrong on my end. Please try again.";
 
 export async function askCopper({
@@ -48,77 +54,89 @@ export async function askCopper({
 
   // Without tools, send no instructions either: "always use your tools" with
   // no tools makes the model answer with nothing.
-  const result = callStream(
-    { module: 2, feature: "ask-copper" },
-    {
-      messages,
-      providerOptions: THOUGHT_SUMMARIES,
-      ...(useTools && {
-        instructions: COPPER_INSTRUCTIONS,
-        tools: copperTools,
-        stopWhen: stepCountIs(MAX_STEPS),
-        prepareStep: ({ stepNumber }) =>
-          stepNumber === MAX_STEPS - 1 ? { toolChoice: "none" as const } : {},
-      }),
-    },
-  );
+  const start = () =>
+    callStream(
+      { module: 2, feature: "ask-copper" },
+      {
+        messages,
+        providerOptions: THOUGHT_SUMMARIES,
+        ...(useTools && {
+          instructions: COPPER_INSTRUCTIONS,
+          tools: copperTools,
+          stopWhen: stepCountIs(MAX_STEPS),
+          prepareStep: ({ stepNumber }) =>
+            stepNumber === MAX_STEPS - 1 ? { toolChoice: "none" as const } : {},
+        }),
+      },
+    );
 
   // Read the stream in the background, so the panel gets the first update now.
   void (async () => {
     try {
-      for await (const part of result.fullStream) {
-        switch (part.type) {
-          case "reasoning-delta": {
-            const last = progress.steps.at(-1);
-            if (last?.type === "thinking") last.text += part.text;
-            else progress.steps.push({ type: "thinking", text: part.text });
-            break;
-          }
-          case "tool-input-start":
-            progress.steps.push({
-              type: "tool",
-              id: part.id,
-              name: part.toolName,
-              state: "calling",
-            });
-            break;
-          case "tool-call": {
-            const step = toolStep(part.toolCallId);
-            if (step) step.input = part.input;
-            else
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (attempt > 1) {
+          // The last try ended with thinking but no answer: start over.
+          progress.steps = [];
+          progress.reply = "";
+          update(snapshot());
+        }
+        const result = start();
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case "reasoning-delta": {
+              const last = progress.steps.at(-1);
+              if (last?.type === "thinking") last.text += part.text;
+              else progress.steps.push({ type: "thinking", text: part.text });
+              break;
+            }
+            case "tool-input-start":
               progress.steps.push({
                 type: "tool",
-                id: part.toolCallId,
+                id: part.id,
                 name: part.toolName,
                 state: "calling",
-                input: part.input,
               });
-            break;
+              break;
+            case "tool-call": {
+              const step = toolStep(part.toolCallId);
+              if (step) step.input = part.input;
+              else
+                progress.steps.push({
+                  type: "tool",
+                  id: part.toolCallId,
+                  name: part.toolName,
+                  state: "calling",
+                  input: part.input,
+                });
+              break;
+            }
+            case "tool-result": {
+              const step = toolStep(part.toolCallId);
+              if (step)
+                Object.assign(step, { output: part.output, state: "done" });
+              break;
+            }
+            case "tool-error": {
+              const step = toolStep(part.toolCallId);
+              const message =
+                part.error instanceof Error
+                  ? part.error.message
+                  : String(part.error);
+              if (step)
+                Object.assign(step, { output: message, state: "error" });
+              break;
+            }
+            case "text-delta":
+              progress.reply += part.text;
+              break;
+            case "error":
+              throw part.error;
+            default:
+              continue;
           }
-          case "tool-result": {
-            const step = toolStep(part.toolCallId);
-            if (step)
-              Object.assign(step, { output: part.output, state: "done" });
-            break;
-          }
-          case "tool-error": {
-            const step = toolStep(part.toolCallId);
-            const message =
-              part.error instanceof Error
-                ? part.error.message
-                : String(part.error);
-            if (step) Object.assign(step, { output: message, state: "error" });
-            break;
-          }
-          case "text-delta":
-            progress.reply += part.text;
-            break;
-          case "error":
-            throw part.error;
-          default:
-            continue;
+          update(snapshot());
         }
-        update(snapshot());
+        if (progress.reply.trim()) break;
       }
       progress.status = "done";
       if (!progress.reply.trim()) progress.reply = SORRY;
