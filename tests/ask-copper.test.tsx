@@ -776,6 +776,23 @@ describe("Part C: askCopper", () => {
     );
   });
 
+  it("always leaves the last step for the reply, even if the model keeps calling tools", async () => {
+    // Five tool calls in a row, then (with tools switched off) the answer.
+    model = modelStreaming(
+      ...Array.from({ length: 5 }, () => calls("get_prices", {})),
+      says("Here are the prices."),
+    );
+    const { askCopper } = await loadAsk();
+    const result = await answer(
+      await askCopper({ messages: question, useTools: true }),
+    );
+    expect(result.reply).toBe("Here are the prices.");
+    expect(result.status).toBe("done");
+    const choices = model.doStreamCalls.map((c) => c.toolChoice?.type);
+    expect(choices.at(-1)).toBe("none");
+    expect(choices.slice(0, -1).every((t) => t !== "none")).toBe(true);
+  });
+
   it("AC-M2.15 Copper's instructions are written and sent to the model, and the conversation is passed along", async () => {
     const { COPPER_INSTRUCTIONS } =
       await import("@/lib/copper/assistant/instructions");

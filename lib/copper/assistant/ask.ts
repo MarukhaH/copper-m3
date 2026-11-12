@@ -20,8 +20,12 @@ export type AskCopperRequest = {
 
 export type AskCopperResult = { progress: Live<Progress> };
 
-/** At most this many model steps (tool calls plus the reply) per question. */
-const MAX_STEPS = 5;
+/**
+ * At most this many model steps (tool calls plus the reply) per question. The
+ * last step is always the reply: tools are switched off for it, so a model
+ * that keeps calling tools still has to answer.
+ */
+const MAX_STEPS = 6;
 
 const SORRY = "Sorry, something went wrong on my end. Please try again.";
 
@@ -53,6 +57,8 @@ export async function askCopper({
         instructions: COPPER_INSTRUCTIONS,
         tools: copperTools,
         stopWhen: stepCountIs(MAX_STEPS),
+        prepareStep: ({ stepNumber }) =>
+          stepNumber === MAX_STEPS - 1 ? { toolChoice: "none" as const } : {},
       }),
     },
   );
