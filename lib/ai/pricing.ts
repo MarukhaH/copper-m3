@@ -7,6 +7,7 @@ export const PRICING: Record<ModelId, { input: number; output: number }> = {
   "google/gemini-3-flash": { input: 0.5, output: 3 },
   // $0.75 / $3.75 through 2026-12-31; Google doubles it from 2027-01-01.
   "google/gemini-3.8-flash": { input: 0.75, output: 3.75 },
+  "google/gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
 };
 
 export function costUsd(

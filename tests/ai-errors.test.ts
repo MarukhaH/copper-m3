@@ -57,7 +57,7 @@ describe("[ai_error] log", () => {
     expect(row).toMatchObject({
       module: 3,
       feature: "test",
-      model: "google/gemini-3.8-flash",
+      model: "google/gemini-3.5-flash-lite",
       status: 429,
     });
     expect(row.message).toContain("exceeded your current quota");

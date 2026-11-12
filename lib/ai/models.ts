@@ -14,18 +14,24 @@ export const MODELS = [
   },
   {
     id: "google/gemini-3.8-flash",
-    label: "Gemini 3.8 Flash (newest, the default)",
+    label: "Gemini 3.8 Flash (newest, can be slow or busy)",
     googleId: "gemini-3.8-flash",
+  },
+  {
+    id: "google/gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash-Lite (lighter and quicker, the default)",
+    googleId: "gemini-3.5-flash-lite",
   },
 ] as const;
 
 export type ModelId = (typeof MODELS)[number]["id"];
 
 /**
- * The model used when a call doesn't name one. Google closed Gemini 2.5 Flash
- * to new API keys, so the default is the newest Flash model.
+ * The model used when a call doesn't name one: a light, quick Flash-Lite
+ * model. Google closed Gemini 2.5 Flash to new API keys, and 3.8 Flash was
+ * timing out. The others are still approved; pick one with AI_MODEL.
  */
-export const DEFAULT_MODEL: ModelId = "google/gemini-3.8-flash";
+export const DEFAULT_MODEL: ModelId = "google/gemini-3.5-flash-lite";
 
 /** AI_MODEL if it names an approved model, otherwise the default. */
 export function defaultModel(): ModelId {
